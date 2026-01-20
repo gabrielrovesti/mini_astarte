@@ -8,4 +8,12 @@ defmodule MiniAstarte.Streams do
       {:measurement, measurement}
     )
   end
+
+  def broadcast_alert(alert) do
+    Phoenix.PubSub.broadcast(
+      MiniAstarte.PubSub,
+      "alerts",
+      {:alert, alert}
+    )
+  end
 end

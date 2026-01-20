@@ -10,7 +10,18 @@ defmodule MiniAstarte.Mqtt.Handler do
   def handle_message(["devices", device_id, "data"], payload, state) do
     case Jason.decode(payload) do
       {:ok, data} ->
-        _ = MiniAstarte.Ingest.ingest_mqtt(device_id, data)
+        _ = MiniAstarte.Ingest.ingest_mqtt(device_id, nil, data)
+        {:ok, state}
+
+      _ ->
+        {:ok, state}
+    end
+  end
+
+  def handle_message(["devices", device_id, "data", token], payload, state) do
+    case Jason.decode(payload) do
+      {:ok, data} ->
+        _ = MiniAstarte.Ingest.ingest_mqtt(device_id, token, data)
         {:ok, state}
 
       _ ->

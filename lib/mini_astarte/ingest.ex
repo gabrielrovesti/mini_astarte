@@ -1,17 +1,18 @@
 defmodule MiniAstarte.Ingest do
   alias MiniAstarte.Repo
-  alias MiniAstarte.Schemas.Measurement
+  alias MiniAstarte.Schemas.{Measurement, DeviceState}
   alias MiniAstarte.Devices
 
   def ingest_http(device_id, token, key, value, ts) do
     ingest(device_id, token, key, value, ts)
   end
 
-  def ingest_mqtt(device_id, %{"token" => token, "key" => key, "value" => value} = payload) do
+  def ingest_mqtt(device_id, token_from_topic, %{"key" => key, "value" => value} = payload) do
+    token = Map.get(payload, "token") || token_from_topic
     ingest(device_id, token, key, value, Map.get(payload, "ts"))
   end
 
-  def ingest_mqtt(_device_id, _payload), do: {:error, "invalid_payload"}
+  def ingest_mqtt(_device_id, _token_from_topic, _payload), do: {:error, "invalid_payload"}
 
   defp ingest(device_id, token, key, value, ts) do
     with %{} = device <- Devices.get_device(device_id),
@@ -29,6 +30,7 @@ defmodule MiniAstarte.Ingest do
 
       case Repo.insert(changeset) do
         {:ok, measurement} = ok ->
+          upsert_state(device_id, key, val, ts_value)
           MiniAstarte.Rules.maybe_alert(device_id, key, val, ts_value)
           MiniAstarte.Streams.broadcast_measurement(measurement)
           ok
@@ -58,4 +60,22 @@ defmodule MiniAstarte.Ingest do
   defp parse_value(value) when is_integer(value), do: {:ok, value * 1.0}
   defp parse_value(value) when is_float(value), do: {:ok, value}
   defp parse_value(_), do: {:error, "invalid_value"}
+
+  defp upsert_state(device_id, key, value, ts) do
+    changeset =
+      DeviceState.changeset(%DeviceState{}, %{
+        device_id: device_id,
+        key: key,
+        value: value,
+        ts: ts
+      })
+
+    Repo.insert(
+      changeset,
+      on_conflict: [
+        set: [value: value, ts: ts, updated_at: NaiveDateTime.utc_now()]
+      ],
+      conflict_target: [:device_id, :key]
+    )
+  end
 end

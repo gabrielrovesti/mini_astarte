@@ -20,7 +20,10 @@ defmodule MiniAstarte.Rules do
               ts: ts
             })
 
-          Repo.insert(changeset)
+          case Repo.insert(changeset) do
+            {:ok, alert} -> MiniAstarte.Streams.broadcast_alert(alert)
+            _ -> :ok
+          end
         end)
 
         :alerted

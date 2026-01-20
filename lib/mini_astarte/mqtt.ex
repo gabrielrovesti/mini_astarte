@@ -19,7 +19,7 @@ defmodule MiniAstarte.Mqtt do
       client_id: client_id,
       server: {Tortoise.Transport.Tcp, host: host, port: port},
       handler: {MiniAstarte.Mqtt.Handler, []},
-      subscriptions: [{"devices/+/data", 0}]
+      subscriptions: [{"devices/+/data", 0}, {"devices/+/data/+", 0}]
     )
   end
 end

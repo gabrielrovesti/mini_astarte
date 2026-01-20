@@ -6,7 +6,7 @@ defmodule MiniAstarte.MixProject do
       app: :mini_astarte,
       version: "0.1.0",
       elixir: "~> 1.15",
-      elixirc_paths: ["lib"],
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -19,6 +19,9 @@ defmodule MiniAstarte.MixProject do
     ]
   end
 
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
   defp deps do
     [
       {:plug_cowboy, "~> 2.6"},
@@ -27,7 +30,8 @@ defmodule MiniAstarte.MixProject do
       {:ecto_sql, "~> 3.11"},
       {:ecto_sqlite3, "~> 0.13"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:tortoise, "~> 0.10"}
+      {:tortoise, "~> 0.10"},
+      {:websock_adapter, "~> 0.5"}
     ]
   end
 end

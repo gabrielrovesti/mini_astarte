@@ -1,7 +1,7 @@
 defmodule MiniAstarte.Query do
   import Ecto.Query, only: [from: 2]
   alias MiniAstarte.Repo
-  alias MiniAstarte.Schemas.{Alert, Measurement}
+  alias MiniAstarte.Schemas.{Alert, Measurement, DeviceState}
 
   def list_measurements(opts \\ %{}) do
     device_id = Map.get(opts, :device_id)
@@ -40,6 +40,24 @@ defmodule MiniAstarte.Query do
     query =
       from(a in query,
         order_by: [desc: a.ts],
+        limit: ^limit,
+        offset: ^offset
+      )
+
+    Repo.all(query)
+  end
+
+  def list_states(opts \\ %{}) do
+    device_id = Map.get(opts, :device_id)
+    limit = Map.get(opts, :limit, 50)
+    offset = Map.get(opts, :offset, 0)
+
+    query = from(s in DeviceState, select: s)
+    query = if device_id, do: from(s in query, where: s.device_id == ^device_id), else: query
+
+    query =
+      from(s in query,
+        order_by: [desc: s.updated_at],
         limit: ^limit,
         offset: ^offset
       )

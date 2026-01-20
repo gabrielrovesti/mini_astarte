@@ -319,6 +319,28 @@ defmodule MiniAstarteWeb.Router do
             <tbody id="alerts"></tbody>
           </table>
         </section>
+        <section>
+          <h2>Rules</h2>
+          <div class="controls">
+            <label>Admin Token</label>
+            <input id="adminToken" placeholder="x-admin-token" />
+            <label>Device ID (optional)</label>
+            <input id="ruleDeviceId" placeholder="dev-1" />
+            <label>Key</label>
+            <input id="ruleKey" placeholder="temp" />
+            <label>Op</label>
+            <input id="ruleOp" placeholder="gt" />
+            <label>Value</label>
+            <input id="ruleValue" placeholder="30.0" />
+            <label>Enabled</label>
+            <input id="ruleEnabled" placeholder="true" value="true" />
+            <button id="createRule">Create</button>
+          </div>
+          <table>
+            <thead><tr><th>ID</th><th>Device</th><th>Key</th><th>Op</th><th>Value</th><th>Enabled</th><th>Actions</th></tr></thead>
+            <tbody id="rules"></tbody>
+          </table>
+        </section>
       </main>
       <script>
         async function loadData() {
@@ -347,8 +369,70 @@ defmodule MiniAstarteWeb.Router do
             `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.rule}</td><td>${JSON.stringify(row.payload)}</td></tr>`
           ).join("");
         }
+        async function loadRules() {
+          const res = await fetch(`/api/rules`);
+          const data = (await res.json()).data || [];
+          document.getElementById("rules").innerHTML = data.map(row => `
+            <tr>
+              <td>${row.id}</td>
+              <td>${row.device_id || ""}</td>
+              <td>${row.key}</td>
+              <td>${row.op}</td>
+              <td>${row.value}</td>
+              <td>${row.enabled}</td>
+              <td>
+                <button data-id="${row.id}" data-enabled="${row.enabled}" class="toggleRule">Toggle</button>
+                <button data-id="${row.id}" class="deleteRule">Delete</button>
+              </td>
+            </tr>
+          `).join("");
+        }
+        async function createRule() {
+          const token = document.getElementById("adminToken").value.trim();
+          const deviceId = document.getElementById("ruleDeviceId").value.trim();
+          const key = document.getElementById("ruleKey").value.trim();
+          const op = document.getElementById("ruleOp").value.trim();
+          const value = parseFloat(document.getElementById("ruleValue").value.trim());
+          const enabled = document.getElementById("ruleEnabled").value.trim().toLowerCase() !== "false";
+          const payload = { key, op, value, enabled };
+          if (deviceId) payload.device_id = deviceId;
+          await fetch("/api/rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            body: JSON.stringify(payload)
+          });
+          loadRules();
+        }
+        async function toggleRule(id, enabled) {
+          const token = document.getElementById("adminToken").value.trim();
+          await fetch(`/api/rules/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            body: JSON.stringify({ enabled: !enabled })
+          });
+          loadRules();
+        }
+        async function deleteRule(id) {
+          const token = document.getElementById("adminToken").value.trim();
+          await fetch(`/api/rules/${id}`, {
+            method: "DELETE",
+            headers: { "x-admin-token": token }
+          });
+          loadRules();
+        }
         document.getElementById("refresh").addEventListener("click", loadData);
+        document.getElementById("createRule").addEventListener("click", createRule);
+        document.getElementById("rules").addEventListener("click", (event) => {
+          const target = event.target;
+          if (target.classList.contains("toggleRule")) {
+            toggleRule(target.dataset.id, target.dataset.enabled === "true");
+          }
+          if (target.classList.contains("deleteRule")) {
+            deleteRule(target.dataset.id);
+          }
+        });
         loadData();
+        loadRules();
       </script>
     </body>
     </html>

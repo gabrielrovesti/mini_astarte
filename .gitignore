@@ -1,0 +1,9 @@
+/_build/
+/deps/
+/doc/
+/cover/
+/.fetch
+/erl_crash.dump
+/priv/mini_astarte.db
+/.elixir_ls/
+/.tool-versions

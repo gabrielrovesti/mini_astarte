@@ -90,6 +90,135 @@ defmodule MiniAstarteWeb.Router do
     end
   end
 
+  get "/api/state" do
+    conn = fetch_query_params(conn)
+    device_id = Map.get(conn.params, "device_id")
+    limit = parse_limit(conn.params["limit"])
+    offset = parse_offset(conn.params["offset"])
+
+    data =
+      MiniAstarte.Query.list_states(%{
+        device_id: device_id,
+        limit: limit,
+        offset: offset
+      })
+
+    send_json(conn, 200, %{data: Enum.map(data, &format_state/1)})
+  end
+
+  get "/api/export/measurements.csv" do
+    conn = fetch_query_params(conn)
+    device_id = Map.get(conn.params, "device_id")
+    limit = parse_limit(conn.params["limit"])
+    offset = parse_offset(conn.params["offset"])
+
+    with {:ok, from_ts} <- parse_datetime(conn.params["from"]),
+         {:ok, to_ts} <- parse_datetime(conn.params["to"]) do
+      data =
+        MiniAstarte.Query.list_measurements(%{
+          device_id: device_id,
+          limit: limit,
+          offset: offset,
+          from: from_ts,
+          to: to_ts
+        })
+
+      csv =
+        ["id,device_id,key,value,ts"] ++
+          Enum.map(data, fn row ->
+            [
+              row.id,
+              row.device_id,
+              row.key,
+              row.value,
+              DateTime.to_iso8601(row.ts)
+            ]
+            |> Enum.map(&csv_escape/1)
+            |> Enum.join(",")
+          end)
+          |> Enum.join("\n")
+
+      conn
+      |> put_resp_content_type("text/csv")
+      |> send_resp(200, csv)
+    else
+      {:error, msg} -> send_json(conn, 400, %{error: msg})
+    end
+  end
+
+  get "/api/export/alerts.csv" do
+    conn = fetch_query_params(conn)
+    device_id = Map.get(conn.params, "device_id")
+    limit = parse_limit(conn.params["limit"])
+    offset = parse_offset(conn.params["offset"])
+
+    with {:ok, from_ts} <- parse_datetime(conn.params["from"]),
+         {:ok, to_ts} <- parse_datetime(conn.params["to"]) do
+      data =
+        MiniAstarte.Query.list_alerts(%{
+          device_id: device_id,
+          limit: limit,
+          offset: offset,
+          from: from_ts,
+          to: to_ts
+        })
+
+      csv =
+        ["id,device_id,rule,payload,ts"] ++
+          Enum.map(data, fn row ->
+            [
+              row.id,
+              row.device_id,
+              row.rule,
+              Jason.encode!(row.payload),
+              DateTime.to_iso8601(row.ts)
+            ]
+            |> Enum.map(&csv_escape/1)
+            |> Enum.join(",")
+          end)
+          |> Enum.join("\n")
+
+      conn
+      |> put_resp_content_type("text/csv")
+      |> send_resp(200, csv)
+    else
+      {:error, msg} -> send_json(conn, 400, %{error: msg})
+    end
+  end
+
+  get "/api/export/state.csv" do
+    conn = fetch_query_params(conn)
+    device_id = Map.get(conn.params, "device_id")
+    limit = parse_limit(conn.params["limit"])
+    offset = parse_offset(conn.params["offset"])
+
+    data =
+      MiniAstarte.Query.list_states(%{
+        device_id: device_id,
+        limit: limit,
+        offset: offset
+      })
+
+    csv =
+      ["id,device_id,key,value,ts"] ++
+        Enum.map(data, fn row ->
+          [
+            row.id,
+            row.device_id,
+            row.key,
+            row.value,
+            DateTime.to_iso8601(row.ts)
+          ]
+          |> Enum.map(&csv_escape/1)
+          |> Enum.join(",")
+        end)
+        |> Enum.join("\n")
+
+    conn
+    |> put_resp_content_type("text/csv")
+    |> send_resp(200, csv)
+  end
+
   get "/api/rules" do
     conn = fetch_query_params(conn)
     device_id = Map.get(conn.params, "device_id")
@@ -150,6 +279,10 @@ defmodule MiniAstarteWeb.Router do
     else
       send_json(conn, 401, %{error: "unauthorized"})
     end
+  end
+
+  get "/ws" do
+    WebSockAdapter.upgrade(conn, MiniAstarteWeb.Socket, %{}, timeout: 60_000)
   end
 
   get "/dashboard" do
@@ -236,6 +369,16 @@ defmodule MiniAstarteWeb.Router do
     }
   end
 
+  defp format_state(state) do
+    %{
+      id: state.id,
+      device_id: state.device_id,
+      key: state.key,
+      value: state.value,
+      ts: DateTime.to_iso8601(state.ts)
+    }
+  end
+
   defp format_rule(rule) do
     %{
       id: rule.id,
@@ -246,6 +389,20 @@ defmodule MiniAstarteWeb.Router do
       enabled: rule.enabled,
       inserted_at: DateTime.to_iso8601(rule.inserted_at)
     }
+  end
+
+  defp csv_escape(value) do
+    str =
+      case value do
+        nil -> ""
+        _ -> to_string(value)
+      end
+
+    if String.contains?(str, [",", "\"", "\n", "\r"]) do
+      "\"" <> String.replace(str, "\"", "\"\"") <> "\""
+    else
+      str
+    end
   end
 
   defp admin_authorized?(conn) do
@@ -307,6 +464,7 @@ defmodule MiniAstarteWeb.Router do
             <button id="refresh">Refresh</button>
           </div>
           <h2>Measurements</h2>
+          <canvas id="chart" width="900" height="200" style="width:100%;background:#f6f1e8;border:1px solid #e1d6c5;"></canvas>
           <table>
             <thead><tr><th>Time</th><th>Device</th><th>Key</th><th>Value</th></tr></thead>
             <tbody id="measurements"></tbody>
@@ -317,6 +475,13 @@ defmodule MiniAstarteWeb.Router do
           <table>
             <thead><tr><th>Time</th><th>Device</th><th>Rule</th><th>Payload</th></tr></thead>
             <tbody id="alerts"></tbody>
+          </table>
+        </section>
+        <section>
+          <h2>Device State</h2>
+          <table>
+            <thead><tr><th>Time</th><th>Device</th><th>Key</th><th>Value</th></tr></thead>
+            <tbody id="state"></tbody>
           </table>
         </section>
         <section>
@@ -343,6 +508,26 @@ defmodule MiniAstarteWeb.Router do
         </section>
       </main>
       <script>
+        let chartPoints = [];
+        function drawChart() {
+          const canvas = document.getElementById("chart");
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (chartPoints.length === 0) return;
+          const values = chartPoints.map(p => p.value);
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          const range = max - min || 1;
+          ctx.strokeStyle = "#8b5e34";
+          ctx.beginPath();
+          chartPoints.forEach((p, i) => {
+            const x = (i / (chartPoints.length - 1)) * (canvas.width - 10) + 5;
+            const y = canvas.height - 10 - ((p.value - min) / range) * (canvas.height - 20);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
         async function loadData() {
           const deviceId = document.getElementById("deviceId").value.trim();
           const fromTs = document.getElementById("fromTs").value.trim();
@@ -356,18 +541,25 @@ defmodule MiniAstarteWeb.Router do
           if (limit) params.append("limit", limit);
           if (offset) params.append("offset", offset);
           const qs = params.toString() ? `?${params.toString()}` : "";
-          const [mRes, aRes] = await Promise.all([
+          const [mRes, aRes, sRes] = await Promise.all([
             fetch(`/api/measurements${qs}`),
-            fetch(`/api/alerts${qs}`)
+            fetch(`/api/alerts${qs}`),
+            fetch(`/api/state${qs}`)
           ]);
           const mData = (await mRes.json()).data || [];
           const aData = (await aRes.json()).data || [];
+          const sData = (await sRes.json()).data || [];
           document.getElementById("measurements").innerHTML = mData.map(row =>
             `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.key}</td><td>${row.value}</td></tr>`
           ).join("");
           document.getElementById("alerts").innerHTML = aData.map(row =>
             `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.rule}</td><td>${JSON.stringify(row.payload)}</td></tr>`
           ).join("");
+          document.getElementById("state").innerHTML = sData.map(row =>
+            `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.key}</td><td>${row.value}</td></tr>`
+          ).join("");
+          chartPoints = mData.slice(0, 40).reverse().map(row => ({ value: row.value, ts: row.ts }));
+          drawChart();
         }
         async function loadRules() {
           const res = await fetch(`/api/rules`);
@@ -420,6 +612,33 @@ defmodule MiniAstarteWeb.Router do
           });
           loadRules();
         }
+        function connectWs() {
+          const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+          const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+          ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === "measurement") {
+                const row = msg.data;
+                const tbody = document.getElementById("measurements");
+                tbody.insertAdjacentHTML("afterbegin",
+                  `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.key}</td><td>${row.value}</td></tr>`
+                );
+                chartPoints.push({ value: row.value, ts: row.ts });
+                if (chartPoints.length > 40) chartPoints.shift();
+                drawChart();
+              }
+              if (msg.type === "alert") {
+                const row = msg.data;
+                const tbody = document.getElementById("alerts");
+                tbody.insertAdjacentHTML("afterbegin",
+                  `<tr><td>${row.ts}</td><td>${row.device_id}</td><td>${row.rule}</td><td>${JSON.stringify(row.payload)}</td></tr>`
+                );
+              }
+            } catch (_) {}
+          };
+          ws.onclose = () => setTimeout(connectWs, 2000);
+        }
         document.getElementById("refresh").addEventListener("click", loadData);
         document.getElementById("createRule").addEventListener("click", createRule);
         document.getElementById("rules").addEventListener("click", (event) => {
@@ -433,6 +652,7 @@ defmodule MiniAstarteWeb.Router do
         });
         loadData();
         loadRules();
+        connectWs();
       </script>
     </body>
     </html>

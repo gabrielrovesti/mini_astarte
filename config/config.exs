@@ -8,10 +8,12 @@ config :mini_astarte, MiniAstarte.Repo,
 
 config :mini_astarte,
   http_port: 4000,
-  mqtt: [host: "localhost", port: 1883, client_id: "mini_astarte"],
+  mqtt: [host: "localhost", port: 1883, client_id: "mini_astarte", enabled: true],
   admin_token: "change-me",
   rate_limit: %{max: 60, window_ms: 60_000},
   rules: %{
     "temp" => %{gt: 30.0},
     "humidity" => %{gt: 80.0}
   }
+
+import_config "#{config_env()}.exs"
